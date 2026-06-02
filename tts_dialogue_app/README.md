@@ -26,7 +26,12 @@ CapCut / Camtasia / Veo.
 **Core**
 - Auto-detect characters from `Character: dialogue` (supports `A:`, `Mom:`,
   `Lucy:`, `Narrator:`, `Mẹ:`, `Bé:`, full-width `：`, etc.).
-- Live **voices** and **models** loaded from your ElevenLabs account.
+- Live **voices** and **models** loaded from your ElevenLabs account (all voices,
+  paginated — not just the first page).
+- **Voice Library browser**: search the huge public ElevenLabs catalogue filtered
+  by **language / gender / age / category / keyword**, preview, and **Add** a
+  voice to your account so it's selectable per character. Voice dropdowns show a
+  clear **Nam / Nữ / Trẻ em · độ tuổi · ngôn ngữ** descriptor (type to filter).
 - Per-character config: voice, model, preset, speed, stability, similarity,
   style, speaker boost — with searchable voice dropdown, auto-assign, duplicate.
 - 10 style presets (Neutral, Fast, Slow, Strong, Soft, Emotional, Happy, Calm,

@@ -80,6 +80,54 @@ class LoadVoicesWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class LoadSharedVoicesWorker(QThread):
+    """Browse the public Voice Library with filters (background)."""
+
+    success = Signal(list, bool)  # list[Voice], has_more
+    failed = Signal(str)
+
+    def __init__(self, api_key: str, filters: dict, page: int = 0) -> None:
+        super().__init__()
+        self.api_key = api_key
+        self.filters = filters
+        self.page = page
+
+    def run(self) -> None:
+        try:
+            client = ElevenLabsClient(self.api_key)
+            voices, has_more = client.get_shared_voices(page=self.page, **self.filters)
+            self.success.emit(voices, has_more)
+        except ElevenLabsError as exc:
+            self.failed.emit(exc.message)
+        except Exception as exc:  # pragma: no cover
+            self.failed.emit(str(exc))
+
+
+class AddSharedVoiceWorker(QThread):
+    """Add a Voice Library voice to the account so it becomes usable for TTS."""
+
+    success = Signal(str, object)  # new_voice_id, original Voice
+    failed = Signal(str)
+
+    def __init__(self, api_key: str, voice, new_name: str) -> None:
+        super().__init__()
+        self.api_key = api_key
+        self.voice = voice
+        self.new_name = new_name
+
+    def run(self) -> None:
+        try:
+            client = ElevenLabsClient(self.api_key)
+            new_id = client.add_shared_voice(
+                self.voice.public_owner_id, self.voice.voice_id, self.new_name
+            )
+            self.success.emit(new_id, self.voice)
+        except ElevenLabsError as exc:
+            self.failed.emit(exc.message)
+        except Exception as exc:  # pragma: no cover
+            self.failed.emit(str(exc))
+
+
 class LoadModelsWorker(QThread):
     """Fetch the account's TTS models (model manager)."""
 

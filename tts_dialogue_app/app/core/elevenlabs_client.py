@@ -21,7 +21,8 @@ import requests
 
 from .models import TTSModel, Voice, VoiceSettings
 
-API_BASE = "https://api.elevenlabs.io/v1"
+API_ROOT = "https://api.elevenlabs.io"
+API_BASE = f"{API_ROOT}/v1"
 
 # Output format query param -> ElevenLabs accepts e.g. "mp3_44100_128",
 # "pcm_44100" (wav-like). We request mp3 and convert to wav locally if needed
@@ -101,15 +102,94 @@ class ElevenLabsClient:
         return True
 
     def get_voices(self) -> list[Voice]:
-        """Fetch the list of available voices."""
+        """Fetch ALL voices in the account.
+
+        Uses the paginated ``/v2/voices`` endpoint (page_size=100, following
+        ``next_page_token``) so every voice is returned — not just the first
+        page. Falls back to the legacy ``/v1/voices`` if v2 isn't available."""
+        voices: list[Voice] = []
+        token: str | None = None
         try:
-            resp = self._session.get(f"{API_BASE}/voices", timeout=self.timeout)
+            while True:
+                params: dict = {"page_size": 100}
+                if token:
+                    params["next_page_token"] = token
+                resp = self._session.get(
+                    f"{API_ROOT}/v2/voices", params=params, timeout=self.timeout
+                )
+                if resp.status_code == 404:
+                    return self._get_voices_v1()  # legacy fallback
+                if not resp.ok:
+                    self._handle_error_response(resp)
+                data = resp.json()
+                voices.extend(Voice.from_api(v) for v in data.get("voices", []))
+                if not data.get("has_more"):
+                    break
+                token = data.get("next_page_token")
+                if not token:
+                    break
         except requests.RequestException as exc:
             raise ElevenLabsError(f"Network error while loading voices: {exc}") from exc
+        return voices
+
+    def _get_voices_v1(self) -> list[Voice]:
+        resp = self._session.get(f"{API_BASE}/voices", timeout=self.timeout)
+        if not resp.ok:
+            self._handle_error_response(resp)
+        return [Voice.from_api(v) for v in resp.json().get("voices", [])]
+
+    def get_shared_voices(
+        self,
+        *,
+        search: str = "",
+        language: str = "",
+        gender: str = "",
+        age: str = "",
+        category: str = "",
+        page_size: int = 100,
+        page: int = 0,
+    ) -> tuple[list[Voice], bool]:
+        """Browse the public Voice Library (``/v1/shared-voices``) with filters.
+
+        Returns ``(voices, has_more)``. Empty filter values are omitted. The big
+        community catalogue lives here — ``/v1/voices`` only has account voices."""
+        params: dict = {"page_size": page_size, "page": page}
+        if search:
+            params["search"] = search
+        if language:
+            params["language"] = language
+        if gender:
+            params["gender"] = gender
+        if age:
+            params["age"] = age
+        if category:
+            params["category"] = category
+        try:
+            resp = self._session.get(
+                f"{API_BASE}/shared-voices", params=params, timeout=self.timeout
+            )
+        except requests.RequestException as exc:
+            raise ElevenLabsError(f"Network error while loading voice library: {exc}") from exc
         if not resp.ok:
             self._handle_error_response(resp)
         data = resp.json()
-        return [Voice.from_api(v) for v in data.get("voices", [])]
+        voices = [Voice.from_shared_api(v) for v in data.get("voices", [])]
+        return voices, bool(data.get("has_more", False))
+
+    def add_shared_voice(self, public_owner_id: str, voice_id: str, new_name: str) -> str:
+        """Add a Voice Library voice to the account so it can be used for TTS.
+
+        Returns the NEW account voice_id. Raises :class:`ElevenLabsError`."""
+        if not public_owner_id:
+            raise ElevenLabsError("This voice has no owner id and cannot be added.")
+        url = f"{API_BASE}/voices/add/{public_owner_id}/{voice_id}"
+        try:
+            resp = self._session.post(url, json={"new_name": new_name}, timeout=self.timeout)
+        except requests.RequestException as exc:
+            raise ElevenLabsError(f"Network error while adding voice: {exc}") from exc
+        if not resp.ok:
+            self._handle_error_response(resp)
+        return resp.json().get("voice_id", voice_id)
 
     def get_models(self, only_tts: bool = True) -> list[TTSModel]:
         """Fetch available models. When ``only_tts`` is True (default) only

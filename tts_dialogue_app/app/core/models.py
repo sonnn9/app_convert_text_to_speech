@@ -70,26 +70,107 @@ class Voice:
     name: str
     category: Optional[str] = None
     preview_url: Optional[str] = None
+    # ElevenLabs ``labels`` (gender, age, accent, use_case, description, ...)
+    labels: dict[str, str] = field(default_factory=dict)
+    # For Voice Library (shared) voices: the owner id needed to add the voice
+    # to the account before it can be used for TTS. None for account voices.
+    public_owner_id: Optional[str] = None
+
+    @property
+    def is_shared(self) -> bool:
+        return bool(self.public_owner_id)
+
+    def language(self) -> str:
+        return (self.labels.get("language") or "").lower()
+
+    # ------------------ gender / age helpers (for the UI) ------------------ #
+    def gender(self) -> str:
+        """Raw gender label, lowercased ('male' / 'female' / 'neutral' / '')."""
+        return (self.labels.get("gender") or "").lower()
+
+    def age(self) -> str:
+        """Raw age label ('young' / 'middle_aged' / 'old' / '')."""
+        return (self.labels.get("age") or "").lower()
+
+    def is_child(self) -> bool:
+        """Heuristic: detect a child / kid voice from the labels, name or
+        description (ElevenLabs has no dedicated 'child' gender)."""
+        blob = " ".join([
+            self.name or "",
+            self.labels.get("age", "") or "",
+            self.labels.get("description", "") or "",
+            self.labels.get("use_case", "") or "",
+        ]).lower()
+        return any(k in blob for k in ("child", "kid", "children", "toddler", "baby"))
+
+    def descriptor(self) -> str:
+        """Human-friendly Vietnamese descriptor for the dropdown, e.g.
+        'Nữ · trung niên' or 'Trẻ em' or 'Nam'."""
+        if self.is_child():
+            return "Trẻ em"  # don't append an age for child voices
+        g = self.gender()
+        base = {"male": "Nam", "female": "Nữ"}.get(g, "Khác" if g else "")
+        a = self.age()
+        age_vi = {
+            "young": "trẻ",
+            "middle_aged": "trung niên",
+            "middle aged": "trung niên",
+            "old": "lớn tuổi",
+        }.get(a, "")
+        parts = [p for p in (base, age_vi) if p]
+        return " · ".join(parts) if parts else "Không rõ"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "Voice":
+        labels = data.get("labels") or {}
+        if not isinstance(labels, dict):
+            labels = {}
         return cls(
             voice_id=data.get("voice_id", ""),
             name=data.get("name", "Unknown"),
             category=data.get("category"),
             preview_url=data.get("preview_url"),
+            labels={str(k): str(v) for k, v in labels.items()},
+        )
+
+    @classmethod
+    def from_shared_api(cls, data: dict[str, Any]) -> "Voice":
+        """Build from a /v1/shared-voices entry. Unlike /v1/voices, gender / age /
+        language / accent are TOP-LEVEL fields here, so we fold them into
+        ``labels`` for a consistent UI/descriptor."""
+        labels = {
+            "gender": str(data.get("gender", "") or ""),
+            "age": str(data.get("age", "") or ""),
+            "language": str(data.get("language", "") or ""),
+            "accent": str(data.get("accent", "") or ""),
+            "descriptive": str(data.get("descriptive", "") or ""),
+            "use_case": str(data.get("use_case", "") or ""),
+            "description": str(data.get("description", "") or ""),
+        }
+        return cls(
+            voice_id=data.get("voice_id", ""),
+            name=data.get("name", "Unknown"),
+            category=data.get("category", "library"),
+            preview_url=data.get("preview_url"),
+            labels={k: v for k, v in labels.items() if v},
+            public_owner_id=data.get("public_owner_id"),
         )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Voice":
+        labels = data.get("labels") or {}
+        if not isinstance(labels, dict):
+            labels = {}
         return cls(
             voice_id=data.get("voice_id", ""),
             name=data.get("name", "Unknown"),
             category=data.get("category"),
             preview_url=data.get("preview_url"),
+            labels={str(k): str(v) for k, v in labels.items()},
+            public_owner_id=data.get("public_owner_id"),
         )
 
 

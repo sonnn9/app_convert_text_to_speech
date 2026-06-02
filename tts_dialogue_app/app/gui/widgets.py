@@ -29,6 +29,18 @@ from app.config.settings import AVAILABLE_MODELS, PRESETS
 from app.core.models import CharacterVoiceConfig, Voice, VoiceSettings
 
 
+def _voice_label(v: Voice) -> str:
+    """Dropdown label like 'Rachel — Nữ · trung niên [premade]'.
+
+    The gender/age descriptor is embedded in the text so the searchable combo
+    lets the user type 'Nam' / 'Nữ' / 'Trẻ em' to filter the list."""
+    desc = v.descriptor()
+    lang = v.language()
+    cat = v.category or "voice"
+    lang_part = f" · {lang}" if lang else ""
+    return f"{v.name} — {desc}{lang_part} [{cat}]"
+
+
 class SearchableComboBox(QComboBox):
     """An editable combo box that filters items as you type but still behaves
     like a selector (the final value must be one of the items)."""
@@ -105,7 +117,7 @@ class CharacterConfigTable(QTableWidget):
         """Update the voice list. Re-populates every row's voice dropdown,
         preserving the current selection where possible."""
         self._voices = voices
-        items = [(f"{v.name} ({v.category or 'voice'})", v.voice_id) for v in voices]
+        items = [(_voice_label(v), v.voice_id) for v in voices]
         for row, widgets in self._rows.items():
             combo: SearchableComboBox = widgets["voice"]
             current = combo.currentData()
@@ -181,9 +193,10 @@ class CharacterConfigTable(QTableWidget):
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         self.setItem(row, COL_CHARACTER, item)
 
-        # Voice dropdown (searchable)
+        # Voice dropdown (searchable). The label includes the Vietnamese
+        # gender/age descriptor so users can type "Nữ"/"Trẻ em" to filter.
         voice_combo = SearchableComboBox()
-        items = [(f"{v.name} ({v.category or 'voice'})", v.voice_id) for v in self._voices]
+        items = [(_voice_label(v), v.voice_id) for v in self._voices]
         voice_combo.set_items(items)
         if cfg.voice_id:
             voice_combo.select_by_data(cfg.voice_id)

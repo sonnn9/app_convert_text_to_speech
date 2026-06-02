@@ -82,6 +82,51 @@ PRESETS: dict[str, dict[str, Any]] = {
 
 DEFAULT_PRESET = "Neutral"
 
+
+# --------------------------------------------------------------------------- #
+# Voice Library (shared voices) filter options.
+# Each entry is (display label, api value). Empty value == "Any".
+# --------------------------------------------------------------------------- #
+LIBRARY_LANGUAGES: list[tuple[str, str]] = [
+    ("Any language", ""),
+    ("English", "en"),
+    ("Vietnamese", "vi"),
+    ("Japanese", "ja"),
+    ("Korean", "ko"),
+    ("Chinese", "zh"),
+    ("French", "fr"),
+    ("German", "de"),
+    ("Spanish", "es"),
+    ("Portuguese", "pt"),
+    ("Italian", "it"),
+    ("Hindi", "hi"),
+    ("Arabic", "ar"),
+    ("Russian", "ru"),
+    ("Indonesian", "id"),
+    ("Thai", "th"),
+]
+
+LIBRARY_GENDERS: list[tuple[str, str]] = [
+    ("Any gender", ""),
+    ("Nam (male)", "male"),
+    ("Nữ (female)", "female"),
+    ("Trung tính (neutral)", "neutral"),
+]
+
+LIBRARY_AGES: list[tuple[str, str]] = [
+    ("Any age", ""),
+    ("Trẻ (young)", "young"),
+    ("Trung niên (middle aged)", "middle_aged"),
+    ("Lớn tuổi (old)", "old"),
+]
+
+LIBRARY_CATEGORIES: list[tuple[str, str]] = [
+    ("Any category", ""),
+    ("Professional", "professional"),
+    ("High quality", "high_quality"),
+    ("Famous", "famous"),
+]
+
 # Distinct colors auto-assigned to characters (used as color tags in the queue).
 CHARACTER_COLORS: list[str] = [
     "#4FC3F7", "#FF8A65", "#81C784", "#BA68C8", "#FFD54F",

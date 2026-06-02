@@ -64,6 +64,7 @@ from app.core.pronunciation_manager import PronunciationManager, PronunciationRu
 from app.core.project_manager import Project, ProjectManager
 from app.core.usage_estimator import UsageEstimator
 from app.core.batch_splitter import BatchSplitter
+from app.gui.voice_library import VoiceLibraryDialog
 from app.gui.widgets import CharacterConfigTable
 from app.gui.workers import (
     ConvertWorker,
@@ -235,7 +236,15 @@ class MainWindow(QMainWindow):
 
         self.load_voices_btn = QPushButton("Load Voices")
         self.load_voices_btn.clicked.connect(self.on_load_voices)
+        self.load_voices_btn.setToolTip("Load all voices saved in your account")
         api_layout.addWidget(self.load_voices_btn)
+
+        self.browse_library_btn = QPushButton("Browse Voice Library")
+        self.browse_library_btn.clicked.connect(self.on_browse_library)
+        self.browse_library_btn.setToolTip(
+            "Search the huge public Voice Library by language / gender / age and add voices"
+        )
+        api_layout.addWidget(self.browse_library_btn)
 
         self.load_models_btn = QPushButton("Load Models")
         self.load_models_btn.clicked.connect(self.on_load_models)
@@ -641,6 +650,26 @@ class MainWindow(QMainWindow):
         self.load_voices_btn.setEnabled(True)
         self.log("Load voices failed: " + msg)
         QMessageBox.critical(self, "Load Voices failed", msg)
+
+    def on_browse_library(self) -> None:
+        key = self._current_api_key()
+        if not key:
+            QMessageBox.warning(self, "API Key", "Please enter your API key first.")
+            return
+        self.config.api_key = key
+        dlg = VoiceLibraryDialog(key, log=self.log, parent=self)
+        dlg.voice_added.connect(self._on_library_voice_added)
+        dlg.exec()
+
+    def _on_library_voice_added(self, voice) -> None:
+        """A voice was added from the library — merge it into the voice list and
+        refresh the per-character dropdowns (dedupe by voice_id)."""
+        if any(v.voice_id == voice.voice_id for v in self.voices):
+            return
+        self.voices.append(voice)
+        self._update_status_label()
+        self.config_table.set_voices(self.voices)
+        self.log(f"Voice '{voice.name}' added to the list — now selectable per character.")
 
     def on_load_models(self) -> None:
         key = self._current_api_key()
