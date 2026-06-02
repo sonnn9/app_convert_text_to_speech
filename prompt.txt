@@ -1,0 +1,460 @@
+Bạn là một senior full-stack Python developer. Hãy tạo cho tôi một desktop app chạy trên Windows, có thể đóng gói thành file `.exe`, dùng để convert hội thoại dạng text thành audio nhiều giọng nói bằng ElevenLabs API.
+
+## 1. Mục tiêu app
+
+Tôi cần một app Windows `.exe` có giao diện đơn giản, dễ dùng, để nhập một đoạn hội thoại như:
+
+A: hello
+B: abcde
+C: abcdef
+A: bbbb
+
+App cần tự động detect có bao nhiêu nhân vật trong đoạn hội thoại, ví dụ A, B, C. Sau đó app cho tôi chọn voice tương ứng cho từng nhân vật từ danh sách voice lấy trực tiếp qua ElevenLabs API.
+
+Khi bấm Convert, app sẽ tạo audio cho từng câu thoại theo đúng voice đã chọn, sau đó cho phép:
+
+1. Tải từng audio riêng lẻ theo từng dòng thoại.
+2. Tải toàn bộ audio của từng nhân vật.
+3. Merge toàn bộ hội thoại thành một file audio hoàn chỉnh theo đúng thứ tự hội thoại.
+4. Có thể xuất file `.mp3` hoặc `.wav`.
+
+## 2. Công nghệ mong muốn
+
+Hãy dùng:
+
+* Python 3.11+
+* PySide6 hoặc PyQt6 để làm GUI desktop.
+* ElevenLabs API chính thức.
+* requests hoặc elevenlabs Python SDK đều được, nhưng code cần rõ ràng, dễ sửa.
+* pydub để merge audio.
+* ffmpeg nếu cần xử lý merge/export audio.
+* python-dotenv để lưu API key nếu phù hợp.
+* pyinstaller để đóng gói thành `.exe`.
+
+ElevenLabs có Text to Speech API để chuyển text thành speech theo voice được chọn, có thể lấy danh sách voices qua API/SDK. Voice settings có thể override theo từng request, gồm các tham số như stability, similarity_boost, style, use_speaker_boost. ElevenLabs cũng có model text-to-speech và hỗ trợ nhiều ngôn ngữ. Hãy thiết kế app sao cho dễ thay đổi model ID sau này.
+
+## 3. Giao diện app
+
+Thiết kế giao diện desktop gồm các phần:
+
+### 3.1 API Settings
+
+Có khu vực nhập:
+
+* ElevenLabs API Key
+* Nút “Test API”
+* Nút “Load Voices”
+
+Sau khi load voices thành công, lưu danh sách voices gồm:
+
+* voice name
+* voice_id
+* category nếu có
+* preview_url nếu có
+
+API key nên có thể lưu local an toàn ở file config `.env` hoặc `config.json`, nhưng không hard-code API key trong source code.
+
+### 3.2 Text Input
+
+Có một textarea lớn, có thanh cuộn, để nhập hội thoại dài.
+
+Hỗ trợ format mặc định:
+
+Character: dialogue text
+
+Ví dụ:
+
+Mom: Con muốn làm móng tay thì nói sao?
+Lucy: A manicure, please.
+Mom: Đúng rồi, a manicure, please.
+Lucy: A pedicure, please.
+
+Cần hỗ trợ tên nhân vật có thể là:
+
+A:
+B:
+C:
+Mom:
+Lucy:
+Narrator:
+Mẹ:
+Bé:
+
+Regex parser cần detect phần trước dấu `:` là tên nhân vật, phần sau là câu thoại.
+
+Nếu có dòng không đúng format, app cần cảnh báo hoặc cho vào nhóm “Unknown/Narrator”.
+
+### 3.3 Detect Characters
+
+Có nút:
+
+“Detect Characters”
+
+Sau khi bấm, app sẽ:
+
+1. Parse toàn bộ textarea.
+2. Detect danh sách nhân vật unique.
+3. Hiển thị mỗi nhân vật thành một hàng trong bảng cấu hình voice.
+
+Bảng gồm các cột:
+
+* Character
+* Voice dropdown
+* Model dropdown
+* Speed / Pace
+* Stability
+* Similarity Boost
+* Style
+* Speaker Boost checkbox
+* Emotion / Direction preset
+* Preview button
+
+Lưu ý: ElevenLabs không phải lúc nào cũng có tham số speed trực tiếp trong mọi model/API. Nếu API/model hiện tại không hỗ trợ speed, hãy xử lý bằng cách:
+
+* Tạo option speed trong UI.
+* Nếu API hỗ trợ speed thì truyền vào request.
+* Nếu API không hỗ trợ speed thì dùng pydub để tăng/giảm tốc độ audio sau khi generate.
+* Ghi chú rõ trong code.
+
+### 3.4 Voice Style Presets
+
+Cho phép chọn preset cho từng nhân vật:
+
+* Neutral
+* Fast
+* Slow
+* Strong / Powerful
+* Soft / Gentle
+* Emotional
+* Happy
+* Calm
+* Childlike
+* Narration
+
+Mỗi preset tự động map sang các voice settings phù hợp, ví dụ:
+
+Neutral:
+
+* stability: 0.5
+* similarity_boost: 0.75
+* style: 0.0
+* use_speaker_boost: true
+* speed: 1.0
+
+Soft / Gentle:
+
+* stability: 0.65
+* similarity_boost: 0.8
+* style: 0.25
+* use_speaker_boost: true
+* speed: 0.95
+
+Strong / Powerful:
+
+* stability: 0.35
+* similarity_boost: 0.8
+* style: 0.45
+* use_speaker_boost: true
+* speed: 1.0
+
+Fast:
+
+* stability: 0.45
+* similarity_boost: 0.75
+* style: 0.2
+* use_speaker_boost: true
+* speed: 1.15
+
+Slow:
+
+* stability: 0.6
+* similarity_boost: 0.8
+* style: 0.1
+* use_speaker_boost: true
+* speed: 0.85
+
+Emotional:
+
+* stability: 0.35
+* similarity_boost: 0.85
+* style: 0.65
+* use_speaker_boost: true
+* speed: 0.95
+
+Cho phép người dùng vẫn chỉnh tay các slider sau khi chọn preset.
+
+### 3.5 Queue View
+
+Sau khi parse hội thoại, app cần hiển thị từng câu thoại thành một hàng trong queue.
+
+Bảng queue gồm:
+
+* Index
+* Character
+* Text
+* Selected Voice
+* Status: Pending / Processing / Done / Error
+* Duration
+* Output File
+* Play button
+* Retry button
+
+Nếu đoạn văn dài, queue phải có thanh cuộn.
+
+Khi bấm Convert, app convert lần lượt từng dòng để tránh lỗi rate limit. Có progress bar tổng thể.
+
+Có option:
+
+* Add silence between lines: default 300ms
+* Add longer silence when speaker changes: default 500ms
+* Output folder selector
+* Output format: mp3 / wav
+* Auto merge after convert checkbox
+* Save each line audio checkbox
+* Save grouped audio by character checkbox
+
+## 4. Logic xử lý
+
+### 4.1 Parse dialogue
+
+Viết function:
+
+parse_dialogue(text: str) -> list[DialogueLine]
+
+DialogueLine gồm:
+
+* index
+* character
+* text
+* raw_line
+
+Yêu cầu:
+
+* Bỏ qua dòng trống.
+* Detect character bằng phần trước dấu `:`.
+* Trim whitespace.
+* Nếu một dòng không có dấu `:`, có thể nối vào câu thoại trước đó hoặc đưa vào Narrator, tùy chọn bằng setting.
+* Giữ đúng thứ tự hội thoại.
+
+Ví dụ input:
+
+A: hello
+B: abcde
+C: abcdef
+A: bbbb
+
+Output:
+
+[
+{index: 1, character: "A", text: "hello"},
+{index: 2, character: "B", text: "abcde"},
+{index: 3, character: "C", text: "abcdef"},
+{index: 4, character: "A", text: "bbbb"}
+]
+
+### 4.2 Fetch voices
+
+Viết class ElevenLabsClient:
+
+* **init**(api_key)
+* get_voices()
+* text_to_speech(text, voice_id, model_id, voice_settings, output_path)
+
+Cần xử lý lỗi:
+
+* API key sai
+* hết quota
+* rate limit
+* network error
+* text quá dài
+* voice_id không hợp lệ
+
+Nếu lỗi, hiển thị rõ ở UI.
+
+### 4.3 Convert từng dòng
+
+Với mỗi DialogueLine:
+
+1. Lấy character.
+2. Lấy voice config của character.
+3. Gọi ElevenLabs TTS.
+4. Lưu file tạm theo format:
+
+outputs/project_name/lines/0001_A.mp3
+outputs/project_name/lines/0002_B.mp3
+outputs/project_name/lines/0003_C.mp3
+
+5. Update queue status.
+6. Nếu lỗi, không crash app, chỉ đánh dấu Error và cho Retry.
+
+### 4.4 Merge toàn bộ hội thoại
+
+Sau khi convert xong:
+
+* Merge các line audio theo đúng thứ tự.
+* Thêm silence giữa các câu.
+* Nếu speaker đổi thì dùng speaker_change_silence.
+* Export thành:
+
+outputs/project_name/merged/full_dialogue.mp3
+
+### 4.5 Export theo từng nhân vật
+
+Có nút:
+
+“Export by Character”
+
+App sẽ gom tất cả câu thoại của từng nhân vật thành file riêng.
+
+Ví dụ:
+
+outputs/project_name/by_character/A_all.mp3
+outputs/project_name/by_character/B_all.mp3
+outputs/project_name/by_character/C_all.mp3
+
+Có thể thêm silence ngắn giữa các câu của cùng nhân vật.
+
+### 4.6 Save / Load project
+
+App nên có khả năng save project thành `.json`, gồm:
+
+* original text
+* parsed dialogue lines
+* character voice mapping
+* settings
+* output folder
+* generated files
+
+Có nút:
+
+* New Project
+* Save Project
+* Load Project
+
+## 5. UX yêu cầu
+
+App phải dễ dùng cho người không biết code.
+
+Flow sử dụng:
+
+1. Người dùng nhập API key.
+2. Bấm Load Voices.
+3. Dán đoạn hội thoại vào textarea.
+4. Bấm Detect Characters.
+5. Chọn voice cho từng nhân vật.
+6. Chọn preset giọng: nhanh, chậm, mạnh mẽ, mềm mại...
+7. Bấm Build Queue.
+8. Bấm Convert.
+9. Nghe thử từng dòng nếu muốn.
+10. Download từng dòng / từng nhân vật / merge toàn bộ.
+
+## 6. File structure
+
+Hãy tạo project structure rõ ràng:
+
+tts_dialogue_app/
+main.py
+requirements.txt
+README.md
+build_exe.bat
+app/
+**init**.py
+gui/
+main_window.py
+widgets.py
+core/
+parser.py
+elevenlabs_client.py
+audio_processor.py
+project_manager.py
+models.py
+config/
+settings.py
+assets/
+icon.ico
+outputs/
+
+## 7. Code yêu cầu
+
+Hãy viết code hoàn chỉnh, không viết pseudo-code.
+
+Yêu cầu:
+
+* Có type hints.
+* Có dataclass hoặc pydantic model cho DialogueLine, CharacterVoiceConfig, ProjectSettings.
+* GUI không bị treo khi convert audio dài. Hãy dùng QThread hoặc worker thread.
+* Có progress bar.
+* Có log panel để hiển thị tiến trình.
+* Có error handling rõ ràng.
+* Có comment ở các phần quan trọng.
+* Không hard-code API key.
+* Có requirements.txt.
+* Có README hướng dẫn chạy app.
+* Có build_exe.bat để build `.exe` bằng PyInstaller.
+
+## 8. Gợi ý API
+
+Khi gọi ElevenLabs TTS, cần truyền:
+
+* text
+* voice_id
+* model_id
+* voice_settings nếu API hỗ trợ
+
+Voice settings gồm:
+
+* stability
+* similarity_boost
+* style
+* use_speaker_boost
+
+Hãy để default model là một model phổ biến của ElevenLabs cho text-to-speech, nhưng cho phép chọn model trong UI, ví dụ:
+
+* eleven_multilingual_v2
+* eleven_turbo_v2_5
+* eleven_v3 hoặc model mới nếu API account hỗ trợ
+
+Nếu model không hỗ trợ một tham số nào đó, app không được crash. Hãy fallback gracefully.
+
+## 9. Yêu cầu đóng gói exe
+
+Tạo file `build_exe.bat` chạy được trên Windows:
+
+* tạo venv nếu cần
+* pip install -r requirements.txt
+* pyinstaller --onefile --windowed main.py
+* output nằm trong thư mục `dist/`
+
+Nếu cần ffmpeg, hãy ghi rõ trong README:
+
+* Cách cài ffmpeg.
+* Hoặc cách đặt ffmpeg.exe cùng thư mục app.
+
+## 10. Tính năng nâng cao nếu có thể
+
+Nếu còn thời gian, hãy thêm:
+
+1. Preview voice: nhập một câu test và nghe thử voice của từng nhân vật.
+2. Duplicate voice config từ nhân vật này sang nhân vật khác.
+3. Auto assign voices: tự chọn voice khác nhau cho từng nhân vật.
+4. Search voice trong dropdown.
+5. Batch pause/resume/cancel khi convert.
+6. Retry failed lines.
+7. Character color tag trong queue.
+8. Export subtitle `.srt` đơn giản dựa trên duration audio sau khi merge.
+9. Tự động normalize volume giữa các file audio.
+10. Tự động lưu recent projects.
+
+## 11. Output mong muốn từ bạn
+
+Hãy trả về:
+
+1. Toàn bộ source code theo từng file.
+2. requirements.txt.
+3. README.md.
+4. build_exe.bat.
+5. Hướng dẫn từng bước để tôi chạy app bằng Python.
+6. Hướng dẫn build ra file `.exe`.
+7. Giải thích ngắn gọn cách thay đổi API key, model, voice settings.
+
+Hãy bắt đầu bằng việc tạo project Python hoàn chỉnh.

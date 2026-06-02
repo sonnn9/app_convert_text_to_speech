@@ -1,0 +1,17 @@
+# GUI
+PySide6>=6.6.0
+
+# HTTP / API
+requests>=2.31.0
+
+# Audio processing (merge, export, speed change, normalize)
+pydub>=0.25.1
+# pydub relies on the stdlib `audioop`, which was REMOVED in Python 3.13 (PEP 594).
+# This backport restores it on 3.13+. Harmless/ignored on Python <= 3.12.
+audioop-lts; python_version >= "3.13"
+
+# Config / env
+python-dotenv>=1.0.0
+
+# Packaging (.exe)
+pyinstaller>=6.3.0
