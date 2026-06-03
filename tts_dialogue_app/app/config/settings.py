@@ -127,6 +127,34 @@ LIBRARY_CATEGORIES: list[tuple[str, str]] = [
     ("Famous", "famous"),
 ]
 
+# Region / accent filter (mainly for Vietnamese). Filtered client-side against
+# the voice's accent/description text. The value is a key into REGION_KEYWORDS.
+LIBRARY_REGIONS: list[tuple[str, str]] = [
+    ("Any region", ""),
+    ("Miền Bắc (Northern)", "north"),
+    ("Miền Trung (Central)", "central"),
+    ("Miền Nam (Southern)", "south"),
+]
+
+# Keyword phrases used to match a region from a voice's accent/description.
+# We use specific phrases / city names — NOT bare 'nam'/'bac' — to avoid false
+# positives (e.g. the word "vietnamese" contains "nam").
+REGION_KEYWORDS: dict[str, list[str]] = {
+    "north": ["northern", "north ", "miền bắc", "mien bac", "hanoi", "hà nội", "ha noi"],
+    "central": ["central", "miền trung", "mien trung", "hue", "huế", "da nang", "đà nẵng", "danang"],
+    "south": ["southern", "south ", "miền nam", "mien nam", "saigon", "sài gòn", "sai gon",
+              "ho chi minh", "hcm"],
+}
+
+
+def voice_matches_region(accent_blob: str, region: str) -> bool:
+    """True if ``region`` is empty (any) or one of its keywords appears in the
+    (already lowercased) ``accent_blob``."""
+    if not region:
+        return True
+    blob = accent_blob.lower()
+    return any(kw in blob for kw in REGION_KEYWORDS.get(region, []))
+
 # Distinct colors auto-assigned to characters (used as color tags in the queue).
 CHARACTER_COLORS: list[str] = [
     "#4FC3F7", "#FF8A65", "#81C784", "#BA68C8", "#FFD54F",
@@ -215,6 +243,27 @@ class AppConfig:
     def set(self, key: str, value: Any) -> None:
         self._data[key] = value
         self.save()
+
+    # -------------------------- favorite voices ---------------------------- #
+    def favorite_voices(self) -> list[dict]:
+        """Saved voices (as plain dicts) so they're available next session."""
+        return self._data.get("favorite_voices", [])
+
+    def add_favorite_voice(self, voice_dict: dict) -> None:
+        favs = self._data.get("favorite_voices", [])
+        vid = voice_dict.get("voice_id")
+        favs = [f for f in favs if f.get("voice_id") != vid]  # dedupe
+        favs.append(voice_dict)
+        self._data["favorite_voices"] = favs
+        self.save()
+
+    def remove_favorite_voice(self, voice_id: str) -> None:
+        favs = [f for f in self._data.get("favorite_voices", []) if f.get("voice_id") != voice_id]
+        self._data["favorite_voices"] = favs
+        self.save()
+
+    def is_favorite(self, voice_id: str) -> bool:
+        return any(f.get("voice_id") == voice_id for f in self._data.get("favorite_voices", []))
 
     # -------------------------- recent projects ---------------------------- #
     def add_recent_project(self, path: str) -> None:

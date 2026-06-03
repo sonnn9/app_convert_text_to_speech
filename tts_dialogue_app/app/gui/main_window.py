@@ -64,7 +64,7 @@ from app.core.pronunciation_manager import PronunciationManager, PronunciationRu
 from app.core.project_manager import Project, ProjectManager
 from app.core.usage_estimator import UsageEstimator
 from app.core.batch_splitter import BatchSplitter
-from app.gui.voice_library import VoiceLibraryDialog
+from app.gui.voice_library import VoiceFinderWidget
 from app.gui.widgets import CharacterConfigTable
 from app.gui.workers import (
     ConvertWorker,
@@ -130,11 +130,18 @@ class MainWindow(QMainWindow):
         self._convert_worker: Optional[ConvertWorker] = None
         self._post_worker: Optional[PostProcessWorker] = None
         self._preview_worker: Optional[PreviewWorker] = None
+        # Retain every worker thread so a still-running QThread is never garbage
+        # collected mid-run (which would hard-crash the whole process).
+        self._workers: list = []
 
         # audio player (shared)
         self._player = QMediaPlayer()
         self._audio_out = QAudioOutput()
+        self._audio_out.setVolume(1.0)
         self._player.setAudioOutput(self._audio_out)
+        self._player.errorOccurred.connect(
+            lambda err, msg: self.log(f"Audio player error: {msg}")
+        )
 
         self._build_menu()
         self._build_ui()
@@ -149,6 +156,7 @@ class MainWindow(QMainWindow):
         )
         self.output_folder_edit.setText(default_out)
         self._update_cache_label()
+        self._load_favorite_voices()
 
     # ===================================================================== #
     # Menu
@@ -269,6 +277,23 @@ class MainWindow(QMainWindow):
         self.set_default_model_btn.clicked.connect(self.on_set_default_model)
         model_layout.addWidget(self.set_default_model_btn)
         layout.addWidget(model_box)
+
+        # ---- Voice Finder (inline, collapsible) ----
+        self.voice_finder_box = QGroupBox(
+            "Voice Finder — lọc theo ngôn ngữ / giới tính / tuổi / miền · nghe thử · lưu favorites"
+        )
+        self.voice_finder_box.setCheckable(True)
+        self.voice_finder_box.setChecked(False)
+        vf_layout = QVBoxLayout(self.voice_finder_box)
+        self.voice_finder = VoiceFinderWidget(
+            get_api_key=self._current_api_key, config=self.config, log=self.log
+        )
+        self.voice_finder.voice_added.connect(self._on_library_voice_added)
+        self.voice_finder.setVisible(False)
+        vf_layout.addWidget(self.voice_finder)
+        # collapse/expand by toggling the group's check
+        self.voice_finder_box.toggled.connect(self.voice_finder.setVisible)
+        layout.addWidget(self.voice_finder_box)
 
         # ---- Text input ----
         text_box = QGroupBox("Dialogue Text (format: 'Character: dialogue')")
@@ -587,6 +612,14 @@ class MainWindow(QMainWindow):
     def log(self, message: str) -> None:
         self.log_panel.appendPlainText(message)
 
+    def _track(self, worker) -> None:
+        """Keep a reference until the thread finishes so a running QThread is
+        never garbage-collected (that would abort the process)."""
+        self._workers.append(worker)
+        worker.finished.connect(
+            lambda w=worker: self._workers.remove(w) if w in self._workers else None
+        )
+
     def on_save_log(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save log", "tts_log.txt", "Text (*.txt)")
         if path:
@@ -614,6 +647,7 @@ class MainWindow(QMainWindow):
         self._test_worker = TestApiWorker(key)
         self._test_worker.success.connect(self._on_test_ok)
         self._test_worker.failed.connect(self._on_test_fail)
+        self._track(self._test_worker)
         self._test_worker.start()
 
     def _on_test_ok(self) -> None:
@@ -637,6 +671,7 @@ class MainWindow(QMainWindow):
         self._voices_worker = LoadVoicesWorker(key)
         self._voices_worker.success.connect(self._on_voices_loaded)
         self._voices_worker.failed.connect(self._on_voices_failed)
+        self._track(self._voices_worker)
         self._voices_worker.start()
 
     def _on_voices_loaded(self, voices: list) -> None:
@@ -652,24 +687,36 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Load Voices failed", msg)
 
     def on_browse_library(self) -> None:
+        """Expand the inline Voice Finder panel (and persist the key)."""
         key = self._current_api_key()
-        if not key:
-            QMessageBox.warning(self, "API Key", "Please enter your API key first.")
-            return
-        self.config.api_key = key
-        dlg = VoiceLibraryDialog(key, log=self.log, parent=self)
-        dlg.voice_added.connect(self._on_library_voice_added)
-        dlg.exec()
+        if key:
+            self.config.api_key = key
+        self.voice_finder_box.setChecked(True)
+        self.voice_finder.search_edit.setFocus()
 
     def _on_library_voice_added(self, voice) -> None:
-        """A voice was added from the library — merge it into the voice list and
-        refresh the per-character dropdowns (dedupe by voice_id)."""
+        """A voice was added/saved — merge it into the voice list and refresh the
+        per-character dropdowns (dedupe by voice_id)."""
         if any(v.voice_id == voice.voice_id for v in self.voices):
             return
         self.voices.append(voice)
         self._update_status_label()
         self.config_table.set_voices(self.voices)
-        self.log(f"Voice '{voice.name}' added to the list — now selectable per character.")
+        self.log(f"Voice '{voice.name}' is now selectable per character.")
+
+    def _load_favorite_voices(self) -> None:
+        """Load saved favorite voices at startup so they're immediately
+        selectable per character without re-searching."""
+        favs = [Voice.from_dict(d) for d in self.config.favorite_voices()]
+        added = 0
+        for v in favs:
+            if not any(x.voice_id == v.voice_id for x in self.voices):
+                self.voices.append(v)
+                added += 1
+        if added:
+            self._update_status_label()
+            self.config_table.set_voices(self.voices)
+            self.log(f"Loaded {added} saved favorite voice(s).")
 
     def on_load_models(self) -> None:
         key = self._current_api_key()
@@ -683,6 +730,7 @@ class MainWindow(QMainWindow):
         self._models_worker = LoadModelsWorker(key)
         self._models_worker.success.connect(self._on_models_loaded)
         self._models_worker.failed.connect(self._on_models_failed)
+        self._track(self._models_worker)
         self._models_worker.start()
 
     def _on_models_loaded(self, models: list) -> None:
@@ -1170,6 +1218,7 @@ class MainWindow(QMainWindow):
             lambda h, m: self.log(f"Cache: {h} hit(s), {m} miss(es).")
         )
         self._convert_worker.finished_all.connect(self._on_convert_finished)
+        self._track(self._convert_worker)
         self._convert_worker.start()
 
     def _set_convert_running(self, running: bool) -> None:
@@ -1286,6 +1335,7 @@ class MainWindow(QMainWindow):
         self._post_worker.log.connect(self.log)
         self._post_worker.success.connect(self._on_post_success)
         self._post_worker.failed.connect(self._on_post_failed)
+        self._track(self._post_worker)
         self._post_worker.start()
 
     def _on_post_success(self, results: dict) -> None:
@@ -1341,6 +1391,7 @@ class MainWindow(QMainWindow):
         self._preview_worker.failed.connect(
             lambda m: QMessageBox.critical(self, "Preview failed", m)
         )
+        self._track(self._preview_worker)
         self._preview_worker.start()
 
     def _on_preview_ready(self, path: str) -> None:
@@ -1532,4 +1583,17 @@ class MainWindow(QMainWindow):
             self._convert_worker.cancel()
             self._convert_worker.wait(3000)
         self._player.stop()
+        try:
+            self.voice_finder._player.stop()
+        except Exception:
+            pass
+        # Wait briefly for any background threads so none is destroyed mid-run
+        # (which would abort the process at exit).
+        for pool in (list(self._workers), list(getattr(self.voice_finder, "_workers", []))):
+            for w in pool:
+                try:
+                    if w.isRunning():
+                        w.wait(2000)
+                except Exception:
+                    pass
         event.accept()

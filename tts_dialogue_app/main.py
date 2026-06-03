@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.config.settings import get_app_dir  # noqa: E402
 from app.core.audio_processor import configure_ffmpeg  # noqa: E402
+from app.core.crash_log import setup_crash_logging  # noqa: E402
 from app.core.win_utils import suppress_subprocess_windows  # noqa: E402
 from app.gui.main_window import MainWindow  # noqa: E402
 
@@ -31,6 +32,9 @@ def _resource_path(rel: str) -> str:
 
 
 def main() -> int:
+    # Log uncaught errors / hard crashes to error.log next to the app, and keep
+    # the window alive instead of vanishing silently.
+    setup_crash_logging(get_app_dir())
     # Windows: stop ffmpeg/ffprobe from flashing console windows during convert.
     suppress_subprocess_windows()
     # Let pydub find a bundled ffmpeg.exe if the user dropped one next to the app.

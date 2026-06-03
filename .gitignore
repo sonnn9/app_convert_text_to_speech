@@ -12,6 +12,7 @@ tts_dialogue_app/build/
 tts_dialogue_app/dist/
 tts_dialogue_app/cache/
 tts_dialogue_app/outputs/
+tts_dialogue_app/config.json
 tts_dialogue_app/__pycache__/
 tts_dialogue_app/app/**/__pycache__/
 

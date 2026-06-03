@@ -128,6 +128,37 @@ class AddSharedVoiceWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class PreviewDownloadWorker(QThread):
+    """Download a public preview_url to a local temp file, then report the path.
+
+    Streaming a remote https URL directly through QMediaPlayer is unreliable on
+    Windows (often silent), so we fetch the bytes first and play the local file.
+    """
+
+    success = Signal(str)  # local file path
+    failed = Signal(str)
+
+    def __init__(self, url: str, dest_path: str) -> None:
+        super().__init__()
+        self.url = url
+        self.dest_path = dest_path
+
+    def run(self) -> None:
+        try:
+            import os as _os
+
+            import requests
+
+            _os.makedirs(_os.path.dirname(self.dest_path), exist_ok=True)
+            resp = requests.get(self.url, timeout=30)
+            resp.raise_for_status()
+            with open(self.dest_path, "wb") as f:
+                f.write(resp.content)
+            self.success.emit(self.dest_path)
+        except Exception as exc:  # network / disk
+            self.failed.emit(str(exc))
+
+
 class LoadModelsWorker(QThread):
     """Fetch the account's TTS models (model manager)."""
 
