@@ -49,6 +49,7 @@ from app.config.settings import (
     PRESETS,
     get_cache_dir,
 )
+from app.core.audio_player import AudioPlayer
 from app.core.audio_postprocessor import PostProcessOptions
 from app.core.cache_manager import CacheManager
 from app.core.models import (
@@ -142,6 +143,9 @@ class MainWindow(QMainWindow):
         self._player.errorOccurred.connect(
             lambda err, msg: self.log(f"Audio player error: {msg}")
         )
+        # Robust playback (ffplay preferred, QMediaPlayer fallback) — QtMultimedia
+        # is often silent inside a PyInstaller build.
+        self._audio_player = AudioPlayer(self._player, log=self.log)
 
         self._build_menu()
         self._build_ui()
@@ -1410,9 +1414,7 @@ class MainWindow(QMainWindow):
         self._play_file(line.output_file)
 
     def _play_file(self, path: str) -> None:
-        self._player.stop()
-        self._player.setSource(QUrl.fromLocalFile(os.path.abspath(path)))
-        self._player.play()
+        self._audio_player.play(path)
 
     # ===================================================================== #
     # Output folder helpers
@@ -1582,9 +1584,9 @@ class MainWindow(QMainWindow):
         if self._convert_worker and self._convert_worker.isRunning():
             self._convert_worker.cancel()
             self._convert_worker.wait(3000)
-        self._player.stop()
+        self._audio_player.stop()
         try:
-            self.voice_finder._player.stop()
+            self.voice_finder._aplayer.stop()
         except Exception:
             pass
         # Wait briefly for any background threads so none is destroyed mid-run

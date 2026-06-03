@@ -41,6 +41,7 @@ from app.config.settings import (
     LIBRARY_REGIONS,
     voice_matches_region,
 )
+from app.core.audio_player import AudioPlayer
 from app.core.models import Voice
 from app.gui.workers import (
     AddSharedVoiceWorker,
@@ -100,6 +101,8 @@ class VoiceFinderWidget(QWidget):
         self._player.errorOccurred.connect(
             lambda err, msg: self._log(f"Preview player error: {msg}")
         )
+        # ffplay-first playback (QtMultimedia is often silent in a built exe)
+        self._aplayer = AudioPlayer(self._player, log=self._log)
 
         self._build_ui()
 
@@ -383,15 +386,11 @@ class VoiceFinderWidget(QWidget):
 
     def _play_local(self, path: str) -> None:
         self.status_label.setText("")
-        self._player.stop()
-        self._player.setSource(QUrl.fromLocalFile(os.path.abspath(path)))
-        self._player.play()
+        self._aplayer.play(path)
 
     def _preview_stream(self, url: str) -> None:
         """Fallback: stream the URL directly if the download failed."""
-        self._player.stop()
-        self._player.setSource(QUrl(url))
-        self._player.play()
+        self._aplayer.play_url(url)
 
     def _action(self, voice: Voice, button: QPushButton) -> None:
         # favorites view -> remove
